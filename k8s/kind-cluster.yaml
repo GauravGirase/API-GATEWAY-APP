@@ -1,0 +1,52 @@
+# kind-cluster.yaml
+# Creates a production-like cluster with:
+# - 1 control plane node
+# - 3 worker nodes
+# - Port mappings for Kong API Gateway
+# - Extra port mappings for local access
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+name: microservices-cluster
+
+nodes:
+  # ─── Control Plane ───────────────────────────────────────────────
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"   # needed for ingress controller
+    extraPortMappings:
+      - containerPort: 30080    # Kong HTTP proxy (NodePort)
+        hostPort: 80            # accessible at localhost:80
+        protocol: TCP
+      - containerPort: 30443    # Kong HTTPS proxy (NodePort)
+        hostPort: 443           # accessible at localhost:443
+        protocol: TCP
+      - containerPort: 30081    # Kong Admin API (for debugging)
+        hostPort: 8001
+        protocol: TCP
+
+  # ─── Worker Nodes ─────────────────────────────────────────────────
+  - role: worker
+    labels:
+      node-type: worker         # optional — for pod scheduling rules
+
+  - role: worker
+    labels:
+      node-type: worker
+
+  - role: worker
+    labels:
+      node-type: worker
+
+# ─── Networking ───────────────────────────────────────────────────
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443           # K8s API server port
+  podSubnet: "10.244.0.0/16"   # IP range for pods
+  serviceSubnet: "10.96.0.0/16" # IP range for services
+  disableDefaultCNI: false      # use default kindnet CNI
