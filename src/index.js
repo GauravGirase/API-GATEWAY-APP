@@ -29,7 +29,7 @@ app.use(errorHandler);
 
 // ─── Database & Start ────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/auth_service';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://admin:admin@123@mongodb:27017/auth_service';
 
 mongoose
   .connect(MONGO_URI)
