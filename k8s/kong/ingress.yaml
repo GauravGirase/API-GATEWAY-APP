@@ -1,0 +1,73 @@
+# ingress.yaml
+# Routes all traffic through Kong
+# Public routes: /auth/* (no JWT needed)
+# Protected routes: everything else (JWT required)
+
+---
+# PUBLIC INGRESS — /auth/* routes
+# No JWT check — anyone can hit login/register
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auth-public-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # Rate limit login/register to prevent brute force
+    konghq.com/plugins: rate-limiting-auth, cors
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 3000
+
+---
+# PROTECTED INGRESS — all other routes
+# JWT validation runs on every request
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: protected-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # These plugins run in order on every protected request
+    konghq.com/plugins: jwt-auth, rate-limiting, inject-user-headers, cors
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /users
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 3000
+          - path: /orders
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service     # when you build this
+                port:
+                  number: 3001
+          - path: /products
+            pathType: Prefix
+            backend:
+              service:
+                name: product-service   # when you build this
+                port:
+                  number: 3002
+          - path: /payments
+            pathType: Prefix
+            backend:
+              service:
+                name: payment-service   # when you build this
+                port:
+                  number: 3003
