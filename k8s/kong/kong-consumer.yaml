@@ -1,0 +1,27 @@
+# kong-consumer.yaml
+# Registers the auth-service as the trusted JWT issuer
+# Kong uses this to verify all tokens signed by the auth service
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-service-jwt-secret
+  namespace: default
+  labels:
+    konghq.com/credential: jwt   # tells Kong this is a JWT credential
+stringData:
+  algorithm: HS256
+  secret: "your-super-secret-jwt-key"   # must match JWT_SECRET in auth-service
+
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: auth-service-issuer
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: kong
+username: auth-service-issuer
+credentials:
+  - auth-service-jwt-secret
