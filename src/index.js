@@ -30,7 +30,7 @@ app.use(errorHandler);
 // ─── Database & Start ────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://admin:admin@123@mongodb:27017/auth_service';
-
+console.log(MONGO_URI)
 mongoose
   .connect(MONGO_URI)
   .then(() => {
