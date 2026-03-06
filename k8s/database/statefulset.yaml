@@ -1,0 +1,93 @@
+# k8s/mongodb/04-statefulset.yaml
+# StatefulSet — NOT a Deployment!
+# StatefulSet gives each pod a stable name (mongodb-0, mongodb-1, mongodb-2)
+# and its own persistent volume. This is required for databases.
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: default
+spec:
+  serviceName: mongodb-headless   # links to the headless service
+  replicas: 3                     # 1 primary + 2 secondaries
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:7.0
+          ports:
+            - containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: MONGO_ROOT_USERNAME
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: MONGO_ROOT_PASSWORD
+            - name: MONGO_INITDB_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: MONGO_DATABASE
+
+          # Mount persistent storage to /data/db
+          # This is where MongoDB stores all data
+          volumeMounts:
+            - name: mongodb-data
+              mountPath: /data/db
+            - name: mongodb-init
+              mountPath: /docker-entrypoint-initdb.d
+
+          # Health checks
+          livenessProbe:
+            exec:
+              command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 10
+
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+
+          # Resource limits
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+
+      volumes:
+        - name: mongodb-init
+          configMap:
+            name: mongodb-init
+
+  # volumeClaimTemplates: each pod gets its OWN 10Gi PVC automatically
+  # mongodb-0 → mongodb-data-mongodb-0
+  # mongodb-1 → mongodb-data-mongodb-1
+  # mongodb-2 → mongodb-data-mongodb-2
+  volumeClaimTemplates:
+    - metadata:
+        name: mongodb-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: standard    # change to "gp2" on AWS EKS
