@@ -1,0 +1,23 @@
+# k8s/mongodb/02-configmap.yaml
+# MongoDB initialization script — runs once on first start
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongodb-init
+  namespace: default
+data:
+  init.js: |
+    // Create app user with read/write access to the database
+    db = db.getSiblingDB('auth_service');
+    db.createUser({
+      user: 'appuser',
+      pwd: 'appPassword123',
+      roles: [{ role: 'readWrite', db: 'auth_service' }]
+    });
+
+    // Create indexes for the users collection
+    db.users.createIndex({ email: 1 }, { unique: true });
+    db.users.createIndex({ createdAt: 1 });
+
+    print('✅ MongoDB initialized — auth_service database ready');
