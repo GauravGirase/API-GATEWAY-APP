@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: auth-service
-          image: yourrepo/auth-service:v1   # replace with your image
+          image: gauravgirase/auth-service:v1.0.0   # replace with your image
           ports:
             - containerPort: 3000
           env:
