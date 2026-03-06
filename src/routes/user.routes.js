@@ -1,33 +1,57 @@
 const express = require('express');
-const { protect, requireRole } = require('../middleware/auth.middleware');
-const userController = require('../controllers/user.controller');
+const { body } = require('express-validator');
+const rateLimit = require('express-rate-limit');
+const authController = require('../controllers/auth.controller');
+const { validateRequest } = require('../middleware/validate.middleware');
 
 const router = express.Router();
 
-// All routes below require a valid JWT
-router.use(protect);
+// ─── Rate limit login attempts (5 per 15 min per IP) ─────────────
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+});
 
-// GET /users/me — get your own profile
-router.get('/me', userController.getMe);
+// ─── Validation rules ─────────────────────────────────────────────
+const registerValidation = [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+  body('password')
+    .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+    .matches(/[A-Z]/).withMessage('Password must contain an uppercase letter')
+    .matches(/[0-9]/).withMessage('Password must contain a number'),
+];
 
-// PATCH /users/me — update your own profile
-router.patch('/me', userController.updateMe);
+const loginValidation = [
+  body('email').isEmail().normalizeEmail(),
+  body('password').notEmpty().withMessage('Password is required'),
+];
 
-// PATCH /users/me/password — change password
-router.patch('/me/password', userController.changePassword);
+// ─── Routes ──────────────────────────────────────────────────────
 
-// ─── Admin only routes ────────────────────────────────────────────
+// POST /auth/register
+// Body: { name, email, password }
+router.post('/register', registerValidation, validateRequest, authController.register);
 
-// GET /users — list all users (admin only)
-router.get('/', requireRole('admin'), userController.getAllUsers);
+// POST /auth/login
+// Body: { email, password }
+// Returns: { accessToken, refreshToken, user }
+router.post('/login', loginLimiter, loginValidation, validateRequest, authController.login);
 
-// GET /users/:id — get user by id (admin only)
-router.get('/:id', requireRole('admin'), userController.getUserById);
+// POST /auth/refresh
+// Body: { refreshToken }
+// Returns: { accessToken }  (new access token using refresh token)
+router.post('/refresh', authController.refresh);
 
-// PATCH /users/:id/roles — assign roles (admin only)
-router.patch('/:id/roles', requireRole('admin'), userController.updateRoles);
+// POST /auth/logout
+// Body: { refreshToken }
+// Invalidates the refresh token
+router.post('/logout', authController.logout);
 
-// DELETE /users/:id — deactivate user (admin only)
-router.delete('/:id', requireRole('admin'), userController.deactivateUser);
+// POST /auth/verify
+// Header: Authorization: Bearer <token>
+// Returns: decoded token payload (used by API Gateway to verify tokens)
+router.post('/verify', authController.verify);
 
 module.exports = router;
