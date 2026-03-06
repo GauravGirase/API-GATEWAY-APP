@@ -32,12 +32,12 @@ const loginValidation = [
 
 // POST /auth/register
 // Body: { name, email, password }
-router.post('/register', registerValidation, validateRequest, authController.register);
+router.post('/register', registerValidation, authController.register);
 
 // POST /auth/login
 // Body: { email, password }
 // Returns: { accessToken, refreshToken, user }
-router.post('/login', loginLimiter, loginValidation, validateRequest, authController.login);
+router.post('/login', loginLimiter, loginValidation, authController.login);
 
 // POST /auth/refresh
 // Body: { refreshToken }
