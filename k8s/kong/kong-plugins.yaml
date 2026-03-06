@@ -1,0 +1,96 @@
+# kong-plugins.yaml
+# All Kong plugins in one file
+
+---
+# 1. JWT AUTH PLUGIN
+# Validates JWT signature and expiry on every protected route
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+  namespace: default
+plugin: jwt
+config:
+  key_claim_name: sub          # JWT field to use as consumer identifier
+  claims_to_verify:
+    - exp                      # verify token is not expired
+  run_on_preflight: false
+
+---
+# 2. RATE LIMITING PLUGIN
+# Prevents brute force and abuse
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limiting
+  namespace: default
+plugin: rate-limiting
+config:
+  minute: 100                  # 100 requests per minute per consumer
+  hour: 2000
+  policy: local
+  fault_tolerant: true
+  hide_client_headers: false
+
+---
+# 3. RATE LIMITING FOR AUTH ROUTES (stricter)
+# Login/register get a tighter limit to prevent brute force
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limiting-auth
+  namespace: default
+plugin: rate-limiting
+config:
+  minute: 10                   # only 10 login attempts per minute per IP
+  policy: local
+  fault_tolerant: true
+
+---
+# 4. REQUEST TRANSFORMER PLUGIN
+# Injects user info from JWT into headers for microservices
+# Microservices read X-User-Id instead of decoding the JWT themselves
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: inject-user-headers
+  namespace: default
+plugin: request-transformer
+config:
+  add:
+    headers:
+      - "X-User-Id:$(jwt.claims.sub)"
+      - "X-User-Email:$(jwt.claims.email)"
+      - "X-User-Roles:$(jwt.claims.roles)"
+  remove:
+    headers:
+      - Authorization              # strip JWT from upstream request
+
+---
+# 5. CORS PLUGIN
+# Allow frontend (React/Next.js) to call the API
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: cors
+  namespace: default
+plugin: cors
+config:
+  origins:
+    - "http://localhost:3000"    # React dev server
+    - "http://localhost:5173"    # Vite dev server
+    - "https://yourdomain.com"   # production frontend
+  methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+  headers:
+    - Accept
+    - Authorization
+    - Content-Type
+    - X-Requested-With
+  credentials: true
+  max_age: 3600
