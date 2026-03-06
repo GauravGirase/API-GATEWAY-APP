@@ -11,6 +11,7 @@ docker network create auth-service
 ```bash
 docker run -d -p 3000:3000 \
 --network auth-network \
+--env MONGO_URI=<URI> \
 --env JWT_SECRET=<KEY> \
 --env JWT_REFRESH_SECRET=<KEY> \
 --name auth-service \
