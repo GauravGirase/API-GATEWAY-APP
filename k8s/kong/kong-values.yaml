@@ -1,0 +1,39 @@
+# kong-values.yaml
+# Kong configuration tuned for kind cluster
+
+# ─── Proxy (API traffic port) ─────────────────────────────────────
+proxy:
+  type: NodePort          # NodePort works perfectly with kind port mappings
+  http:
+    enabled: true
+    nodePort: 30080       # maps to localhost:80 via kind-cluster.yaml
+  tls:
+    enabled: true
+    nodePort: 30443       # maps to localhost:443 via kind-cluster.yaml
+
+# ─── Admin API (config management) ──────────────────────────────
+admin:
+  enabled: true
+  type: ClusterIP         # internal only — access via port-forward
+  http:
+    enabled: true
+
+# ─── Kong Ingress Controller ──────────────────────────────────────
+ingressController:
+  enabled: true
+  installCRDs: true       # installs KongPlugin, KongConsumer CRDs
+
+# ─── Resource limits (kind is a local cluster, keep it light) ────
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "200m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+# ─── Environment variables ────────────────────────────────────────
+env:
+  database: "off"         # DB-less mode — config stored in K8s CRDs
+  router_flavor: "expressions"
+  nginx_worker_processes: "1"
