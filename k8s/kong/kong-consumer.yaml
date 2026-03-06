@@ -11,8 +11,9 @@ metadata:
   labels:
     konghq.com/credential: jwt   # tells Kong this is a JWT credential
 stringData:
+  key: "auth-service-issuer"             # ← REQUIRED: unique key, must match JWT "iss" claim
   algorithm: HS256
-  secret: "your-super-secret-jwt-key"   # must match JWT_SECRET in auth-service
+  secret: "your-super-secret-jwt-key"   # must match JWT_SECRET in auth-service .env
 
 ---
 apiVersion: configuration.konghq.com/v1
