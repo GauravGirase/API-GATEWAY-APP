@@ -1,0 +1,21 @@
+# k8s/mongodb/03-pvc.yaml
+# PersistentVolumeClaim — requests actual disk storage from the cluster
+# This ensures data SURVIVES pod restarts and rescheduling
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce          # one pod at a time (fine for MongoDB)
+  resources:
+    requests:
+      storage: 10Gi          # 10GB of storage
+  storageClassName: standard # use "gp2" on AWS, "standard" on GCP/minikube
+
+---
+# NOTE: For a Replica Set, each pod gets its OWN PVC.
+# StatefulSet handles this automatically using volumeClaimTemplates.
+# See the StatefulSet file below — no need to create PVCs manually.
