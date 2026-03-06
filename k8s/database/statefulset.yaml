@@ -40,6 +40,11 @@ spec:
                 secretKeyRef:
                   name: mongodb-secret
                   key: MONGO_DATABASE
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: MONGO_URI
 
           # Mount persistent storage to /data/db
           # This is where MongoDB stores all data
