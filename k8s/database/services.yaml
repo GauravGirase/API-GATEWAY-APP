@@ -1,0 +1,41 @@
+# k8s/mongodb/05-services.yaml
+# Two services are needed for MongoDB StatefulSet:
+# 1. Headless Service — required by StatefulSet for pod DNS names
+# 2. ClusterIP Service — used by microservices to connect
+
+---
+# HEADLESS SERVICE
+# Required by StatefulSet — gives each pod a stable DNS name
+# mongodb-0.mongodb-headless.default.svc.cluster.local
+# mongodb-1.mongodb-headless.default.svc.cluster.local
+# mongodb-2.mongodb-headless.default.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-headless
+  namespace: default
+spec:
+  clusterIP: None              # None = headless (no virtual IP)
+  selector:
+    app: mongodb
+  ports:
+    - port: 27017
+      targetPort: 27017
+
+---
+# CLUSTERIP SERVICE
+# What your microservices use to connect to MongoDB
+# Connection string: mongodb://user:pass@mongodb-service:27017/dbname
+# Kong automatically routes internal traffic — no external exposure needed
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+  namespace: default
+spec:
+  type: ClusterIP              # internal only — never exposed to internet
+  selector:
+    app: mongodb
+  ports:
+    - port: 27017
+      targetPort: 27017
