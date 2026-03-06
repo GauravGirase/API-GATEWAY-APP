@@ -4,7 +4,27 @@
 JWT-based Authentication & Authorization REST API for Kubernetes microservices.
 
 ## Quick Start
-
+Dockerize the application and run
+```bash
+docker network create auth-service
+```
+```bash
+docker run -d -p 3000:3000 \
+--network auth-network \
+--env JWT_SECRET=<KEY> \
+--env JWT_REFRESH_SECRET=<KEY> \
+--name auth-service \
+--rm auth-service:latest \
+```
+Running mongoDB as container
+```bash
+docker run -d \
+--network auth-network \
+--name mongodb \
+--env MONGO_INITDB_ROOT_USERNAME=admin \
+--env MONGO_INITDB_ROOT_PASSWORD=admin@123 \
+mongo
+```
 ```bash
 cp .env.example .env      # fill in your values
 npm install
