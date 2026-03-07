@@ -25,7 +25,7 @@ spec:
               service:
                 name: auth-service
                 port:
-                  number: 3000
+                  number: 80
 
 ---
 # PROTECTED INGRESS — all other routes
@@ -49,7 +49,7 @@ spec:
               service:
                 name: auth-service
                 port:
-                  number: 3000
+                  number: 80
           - path: /orders
             pathType: Prefix
             backend:
