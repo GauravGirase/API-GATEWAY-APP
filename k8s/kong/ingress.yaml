@@ -15,6 +15,7 @@ metadata:
     kubernetes.io/ingress.class: kong
     # Rate limit login/register to prevent brute force
     konghq.com/plugins: rate-limiting-auth, cors
+    konghq.com/strip-path: "true"    # ← strips /auth before forwarding   (index.js has /health)
 spec:
   rules:
     - http:
