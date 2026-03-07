@@ -1,5 +1,10 @@
 # API-GATEWAY-APP
+Authentication Service with Kubernetes & API Gateway
+## Architecture
+![kong-flow](/doc/images/architecture.png)
+
 ## Setup KIND cluster
+
 ### Step 1: Docker installation
 ```bash
 sudo apt-get update
@@ -381,7 +386,291 @@ kubectl apply -f deployment.yaml
 ### Verify workload is deployed 
 ![workload](/doc/images/2-workload-running.png)
 
-## Auth Service
+## SETUP : Kong API-GATEWAY
+### Install kong using helm
+values.yaml
+```bash
+# kong-values.yaml
+# Kong configuration tuned for kind cluster
+
+# ─── Proxy (API traffic port) ─────────────────────────────────────
+proxy:
+  type: NodePort          # NodePort works perfectly with kind port mappings
+  http:
+    enabled: true
+    nodePort: 30080       # maps to localhost:80 via kind-cluster.yaml
+  tls:
+    enabled: true
+    nodePort: 30443       # maps to localhost:443 via kind-cluster.yaml
+
+# ─── Admin API (config management) ──────────────────────────────
+admin:
+  enabled: true
+  type: ClusterIP         # internal only — access via port-forward
+  http:
+    enabled: true
+
+# ─── Kong Ingress Controller ──────────────────────────────────────
+ingressController:
+  enabled: true
+  installCRDs: true       # installs KongPlugin, KongConsumer CRDs
+
+# ─── Resource limits (kind is a local cluster, keep it light) ────
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "200m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+# ─── Environment variables ────────────────────────────────────────
+env:
+  database: "off"         # DB-less mode — config stored in K8s CRDs
+  router_flavor: "expressions"
+  nginx_worker_processes: "1"
+
+```
+**passing values.yaml**
+```bash
+helm repo add kong https://charts.konghq.com
+helm repo update
+helm upgrade --install kong kong/ingress \
+  --namespace kong \
+  --create-namespace \
+  --values kong-values.yaml \
+  --set gateway.proxy.type=NodePort \    # to use port-forward
+  --set gateway.proxy.http.nodePort=32017 \
+  --wait \
+  --timeout 5m
+```
+**output**
+![kong-resources](/doc/images/3-kong-install.png)
+### setup kong-consumer
+kong-consumer.yaml
+```bash
+# Registers the auth-service as the trusted JWT issuer
+# Kong uses this to verify all tokens signed by the auth service
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-service-jwt-secret
+  namespace: default
+  labels:
+    konghq.com/credential: jwt   # tells Kong this is a JWT credential
+stringData:
+  key: "auth-service-issuer"             # ← REQUIRED: unique key, must match JWT "iss" claim
+  algorithm: HS256
+  secret: "your-super-secret-jwt-key"   # must match JWT_SECRET used in auth-service
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: auth-service-issuer
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: kong
+username: auth-service-issuer
+credentials:
+  - auth-service-jwt-secret
+```
+### setup kong-plugins (jwt, rate-limiting,cors)
+kong-plugins.yaml
+```bash
+# All Kong plugins in one file
+---
+# 1. JWT AUTH PLUGIN
+# Validates JWT signature and expiry on every protected route
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+  namespace: default
+plugin: jwt
+config:
+  key_claim_name: sub          # JWT field to use as consumer identifier
+  claims_to_verify:
+    - exp                      # verify token is not expired
+  run_on_preflight: false
+
+---
+# 2. RATE LIMITING PLUGIN
+# Prevents brute force and abuse
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limiting
+  namespace: default
+plugin: rate-limiting
+config:
+  minute: 100                  # 100 requests per minute per consumer
+  hour: 2000
+  policy: local
+  fault_tolerant: true
+  hide_client_headers: false
+
+---
+# 3. RATE LIMITING FOR AUTH ROUTES (stricter)
+# Login/register get a tighter limit to prevent brute force
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limiting-auth
+  namespace: default
+plugin: rate-limiting
+config:
+  minute: 10                   # only 10 login attempts per minute per IP
+  policy: local
+  fault_tolerant: true
+
+---
+# 4. REQUEST TRANSFORMER PLUGIN
+# Injects user info from JWT into headers for microservices
+# Microservices read X-User-Id instead of decoding the JWT themselves
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: inject-user-headers
+  namespace: default
+plugin: request-transformer
+config:
+  add:
+    headers:
+      - "X-User-Id:$(jwt.claims.sub)"
+      - "X-User-Email:$(jwt.claims.email)"
+      - "X-User-Roles:$(jwt.claims.roles)"
+  remove:
+    headers:
+      - Authorization              # strip JWT from upstream request
+
+---
+# 5. CORS PLUGIN
+# Allow frontend (React/Next.js) to call the API
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: cors
+  namespace: default
+plugin: cors
+config:
+  origins:
+    - "http://localhost:3000"    # React dev server
+    - "http://localhost:5173"    # Vite dev server
+    - "https://yourdomain.com"   # production frontend
+  methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+  headers:
+    - Accept
+    - Authorization
+    - Content-Type
+    - X-Requested-With
+  credentials: true
+  max_age: 3600
+```
+### setup ingress rules
+ingress.yaml
+```bash
+# ingress.yaml
+# Routes all traffic through Kong
+# Public routes: /auth/* (no JWT needed)
+# Protected routes: everything else (JWT required)
+
+---
+# PUBLIC INGRESS — /auth/* routes
+# No JWT check — anyone can hit login/register
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auth-public-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # Rate limit login/register to prevent brute force
+    konghq.com/plugins: rate-limiting-auth, cors
+    konghq.com/strip-path: "true"    # ← strips /auth before forwarding   (index.js has /health)
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 80
+
+---
+# PROTECTED INGRESS — all other routes
+# JWT validation runs on every request
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: protected-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: kong
+    # These plugins run in order on every protected request
+    konghq.com/plugins: jwt-auth, rate-limiting, inject-user-headers, cors
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /users
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 80
+```
+**apply workload**
+```bash
+kubectl apply -f kong-consumer.yaml
+kubectl apply -f kong-plugins.yaml
+kubectl apply -f ingress.yaml
+```
+### verify kong resources
+![kong-resources](/doc/images/4-kong-plugin.png)
+![kong-resources](/doc/images/5-kong-workloads.png)
+
+## Testing
+**Port forward**
+```bash
+kubectl port-forward svc/kong-gateway-proxy -n kong 8080:80
+```
+**health check**
+```bash
+curl http://localhost:8080/auth/health
+```
+**register new user**
+```bash
+# Register
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"gaurav","email":"gaurav@example.com","password":"mypassword"}'
+```
+**o/p**
+```bash
+# Response:
+{
+  "accessToken": "eyJhbGci...",
+  "refreshToken": "eyJhbGci...",
+  "user": {
+    "id": "...",
+    "name": "gaurav",
+    "email": "gaurav@example.com",
+    "roles": ["user"]
+  }
+}
+```
+## Auth Service Summary
 
 JWT-based Authentication & Authorization REST API for Kubernetes microservices.
 
@@ -408,14 +697,6 @@ docker run -d \
 --env MONGO_INITDB_ROOT_PASSWORD=admin@123 \
 mongo
 ```
-```bash
-cp .env.example .env      # fill in your values
-npm install
-npm run dev               # starts with nodemon
-```
-
----
-
 ## API Endpoints
 
 ### Public (no token needed)
@@ -449,13 +730,13 @@ npm run dev               # starts with nodemon
 ```bash
 curl -X POST http://localhost:3000/auth/register \
   -H "Content-Type: application/json" \
-  -d '{ "name": "Alice", "email": "alice@example.com", "password": "Password1" }'
+  -d '{ "name": "gaurav", "email": "gaurav@example.com", "password": "Password1" }'
 
 # Response:
 {
   "accessToken": "eyJhbGci...",
   "refreshToken": "eyJhbGci...",
-  "user": { "id": "...", "name": "Alice", "email": "alice@example.com", "roles": ["user"] }
+  "user": { "id": "...", "name": "gaurav", "email": "gaurav@example.com", "roles": ["user"] }
 }
 ```
 
@@ -463,13 +744,7 @@ curl -X POST http://localhost:3000/auth/register \
 ```bash
 curl -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{ "email": "alice@example.com", "password": "Password1" }'
-```
-
-### Call a protected route
-```bash
-curl http://localhost:3000/users/me \
-  -H "Authorization: Bearer <accessToken>"
+  -d '{ "email": "gaurav@example.com", "password": "Password1" }'
 ```
 
 ### Refresh access token
@@ -485,36 +760,14 @@ curl -X POST http://localhost:3000/auth/verify \
   -H "Authorization: Bearer <accessToken>"
 
 # Response:
-{ "valid": true, "userId": "...", "email": "alice@example.com", "roles": ["user"] }
+{ "valid": true, "userId": "...", "email": "gaurav@example.com", "roles": ["user"] }
 ```
-
 ---
-
 ## Token Flow
-
 ```
 1. POST /auth/login  →  { accessToken (1h), refreshToken (7d) }
 2. Use accessToken in every API request header
 3. When accessToken expires (401) → POST /auth/refresh → new accessToken
 4. When refreshToken expires → user must log in again
 5. POST /auth/logout → refreshToken is revoked
-```
-
----
-
-## Kubernetes Deploy
-
-```bash
-# Build & push
-docker build -t yourrepo/auth-service:v1 .
-docker push yourrepo/auth-service:v1
-
-# Create secrets
-kubectl create secret generic auth-secrets \
-  --from-literal=mongo-uri='mongodb+srv://...' \
-  --from-literal=jwt-secret='your-super-secret-32-chars-minimum' \
-  --from-literal=jwt-refresh-secret='different-refresh-secret-32-chars'
-
-# Deploy
-kubectl apply -f k8s/deployment.yaml
 ```
