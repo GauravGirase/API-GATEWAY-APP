@@ -3,6 +3,8 @@ Authentication Service with Kubernetes & API Gateway
 ## Architecture
 ![kong-flow](/doc/images/architecture.png)
 
+## Integration
+![kong-integration](/doc/images/integration.png)
 ## Setup KIND cluster
 
 ### Step 1: Docker installation
