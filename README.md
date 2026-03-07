@@ -110,7 +110,7 @@ networking:
 ```bash
 kind create cluster --config kind-cluster.yaml
 ```
-[!kind-install](/doc/images/1-kind-install.png)
+![kind-install](/doc/images/1-kind-install.png)
 
 ## Deployment of workload (MongoDB using statefulset)
 ### step1: Create secret
@@ -379,7 +379,7 @@ kubectl apply -f auth-secrets.yaml
 kubectl apply -f deployment.yaml
 ```
 ### Verify workload is deployed 
-[!workload](/doc/images/2-workload-running.png)
+![workload](/doc/images/2-workload-running.png)
 
 ## Auth Service
 
